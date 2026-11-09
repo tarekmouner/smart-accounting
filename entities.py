@@ -31,8 +31,14 @@ def entities_page(company, permissions):
                     st.error("لازم تكتب الاسم")
                 else:
                     db.add_party(
-                        company["id"], party_type, name, phone, email,
-                        tax_number, address, notes
+                        company["id"],
+                        party_type,
+                        name,
+                        phone,
+                        email,
+                        tax_number,
+                        address,
+                        notes
                     )
                     st.success("تم الحفظ")
 
@@ -50,11 +56,13 @@ def entities_page(company, permissions):
         else:
             with st.form("add_invoice"):
                 invoice_type = st.selectbox("نوع الفاتورة", ["بيع", "شراء"])
+
                 party = st.selectbox(
                     "العميل أو المورد",
                     parties,
                     format_func=lambda x: f"{x['name']} - {x['party_type']}"
                 )
+
                 invoice_number = st.text_input("رقم الفاتورة")
                 invoice_date = st.date_input("تاريخ الفاتورة", date.today())
                 due_date = st.date_input("تاريخ الاستحقاق", date.today())
@@ -66,8 +74,15 @@ def entities_page(company, permissions):
 
                 if submitted:
                     db.add_invoice(
-                        company["id"], invoice_type, party["id"], invoice_number,
-                        str(invoice_date), str(due_date), amount, paid_amount, notes
+                        company["id"],
+                        invoice_type,
+                        party["id"],
+                        invoice_number,
+                        str(invoice_date),
+                        str(due_date),
+                        amount,
+                        paid_amount,
+                        notes
                     )
                     st.success("تم حفظ الفاتورة")
 
@@ -89,6 +104,7 @@ def entities_page(company, permissions):
                     parties,
                     format_func=lambda x: f"{x['name']} - {x['party_type']}"
                 )
+
                 title = st.text_input("عنوان العقد")
                 contract_date = st.date_input("تاريخ العقد", date.today())
                 start_date = st.date_input("تاريخ البداية", date.today())
@@ -101,8 +117,15 @@ def entities_page(company, permissions):
 
                 if submitted:
                     db.add_contract(
-                        company["id"], party["id"], title, str(contract_date),
-                        str(start_date), str(end_date), amount, payment_terms, notes
+                        company["id"],
+                        party["id"],
+                        title,
+                        str(contract_date),
+                        str(start_date),
+                        str(end_date),
+                        amount,
+                        payment_terms,
+                        notes
                     )
                     st.success("تم حفظ العقد")
 
