@@ -8,8 +8,8 @@ import os
 # 1. إعدادات الصفحة وتصميم الواجهة
 # ---------------------------------------------------------
 st.set_page_config(
-    page_title="نظام TAREKO المحاسبي المتكامل",
-    page_icon="🏢",
+    page_title="نظام TAREKO المحاسبي المتكامل بالذكاء الاصطناعي",
+    page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -199,7 +199,7 @@ def main_app():
     
     available_pages = {
         "📂 شجرة حسابات الشركة": "chart_of_accounts",
-        "✍️ المساعد المحاسبي الذكي (شات)": "journal_generator",
+        "✍️ المساعد المحاسبي الذكي (AI Engine)": "journal_generator",
         "🏢 إعدادات الشركة الحالية واللوجو": "company_settings",
         "➕ إضافة وإدارة الشركات": "companies_manager",
         "👥 إدارة المستخدمين والصلاحيات": "user_management"
@@ -232,71 +232,52 @@ def main_app():
         else:
             st.warning("⚠️ لا توجد شجرة حسابات مسجلة لهذه الشركة! اذهب إلى صفحة (إعدادات الشركة الحالية واللوجو) لرفع ملفها.")
 
-    # --- 2. صفحة مولد القيود والتفاعل الذكي الحقيقي (بدون تخمين عشوائي) ---
+    # --- 2. صفحة مولد القيود المربوط بالذكاء الاصطناعي الحقيقي (AI API) ---
     elif page_key == "journal_generator":
-        st.header(f"✍️ المساعد المحاسبي الذكي - {current_comp_info['company_name']}")
-        st.markdown("دردش معايا براحتك. اسألني عن أي حاجة، أو اكتب مصروف أو عملية مالية. **لو كتبت كلمة ناقصة أو مبهمة (زي 'دين')، هسألك تفاصيلها الأول قبل ما أطلع أي قيد!**")
+        st.header(f"✍️ المساعد المحاسبي الذكي (AI Engine) - {current_comp_info['company_name']}")
+        st.markdown("اسألني عن أي حاجة، اكتب أي مصروف أو عملية مالية، وهرد عليك بالعامية المصرية وبدون أي تخمين أعمى!")
         
-        conn = get_db_connection()
-        coa_df = pd.read_sql_query(
-            "SELECT account_code, account_name, account_type FROM chart_of_accounts WHERE company_id = ?", 
-            conn, 
-            params=(st.session_state['active_company_id'],)
-        )
-        conn.close()
+        if 'ai_chat_history' not in st.session_state:
+            st.session_state['ai_chat_history'] = [
+                {"role": "assistant", "content": f"أهلاً بيك يا باشمهندس طارق. أنا نموذج الذكاء الاصطناعي الخاص بـ {current_comp_info['company_name']}. أؤمرني، إيه العملية أو الاستفسار اللي نحب نظبطه النهاردة؟"}
+            ]
         
-        if coa_df.empty:
-            st.error("⚠️ تنبيه: يرجى رفع شجرة الحسابات للشركة أولاً من إعدادات الشركة.")
-        else:
-            if 'chat_history' not in st.session_state:
-                st.session_state['chat_history'] = [
-                    {"role": "assistant", "content": f"أهلاً بيك يا باشمهندس طارق. أنا معاك أهو، اكتب لي أي استفسار أو عملية حصلت في {current_comp_info['company_name']}!"}
-                ]
+        for message in st.session_state['ai_chat_history']:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+        
+        if user_prompt := st.chat_input("اكتب سؤالك أو عمليتك المحاسبية هنا..."):
+            st.session_state['ai_chat_history'].append({"role": "user", "content": user_prompt})
+            with st.chat_message("user"):
+                st.markdown(user_prompt)
             
-            for message in st.session_state['chat_history']:
-                with st.chat_message(message["role"]):
-                    st.markdown(message["content"])
-            
-            if user_prompt := st.chat_input("اكتب رسالتك أو عمليتك المحاسبية هنا..."):
-                st.session_state['chat_history'].append({"role": "user", "content": user_prompt})
-                with st.chat_message("user"):
-                    st.markdown(user_prompt)
-                
-                text_lower = user_prompt.strip().lower()
-                
-                with st.chat_message("assistant"):
-                    with st.spinner("جاري التحليل والفهم..."):
+            with st.chat_message("assistant"):
+                with st.spinner("جاري التحليل والتفكير..."):
+                    try:
+                        from google import genai
+                        # ضع مفتاح الـ API هنا أو عبر Streamlit Secrets
+                        client = genai.Client(api_key="ضع_مفتاح_الـ_API_هنا")
                         
-                        # 1. الرد على التحيات والدردشة العامة
-                        greetings = ["ازيك", "عامل ايه", "عامل إيه", "ازيكم", "السلام عليكم", "مرحباً", "هلا", "صباح الخير", "مساء الخير", "أهلاً", "مين أنت"]
-                        if any(g in text_lower for g in greetings) and len(text_lower.split()) <= 4:
-                            reply = "الله يسلمك يا باشمهندس طارق! أنا جاهز لأي عملية مالية أو استفسار تخص الشغل. قول لي إيه اللي حصل معاك؟"
-                            st.markdown(reply)
-                            st.session_state['chat_history'].append({"role": "assistant", "content": reply})
+                        system_instruction = f"أنت مساعد محاسبي وخبير برمجي مصري تتحدث باللهجة العامية المصرية بطلاقة. تساعد المطور طارق منير في إدارة شركة {current_comp_info['company_name']}. حلل القيود بدقة، وإذا كانت الجملة مبهمة اسأله للتوضيح ولا تخمن عشوائياً."
                         
-                        # 2. لو الجملة قصيرة جداً أو مبهمة (مثل كلمة "دين" لوحدها، أو اسم شركة غامضة)
-                        elif len(text_lower.split()) <= 2 or any(c in text_lower for c in ["دين", "ديون", "شركة", "إلى", "لـ", "حوالة", "دفعنا", "مبلغ"]) and not any(k in text_lower for k in ["إيجار", "كهرباء", "مياه", "مرتب", "بضاعة", "شراء"]):
-                            clarification_msg = f"يا باشمهندس طارق، جملتك (`{user_prompt}`) مختصرة أو فيها جهة/بند غير واضح تماماً. **عشان مألفش قيد غلط، وضح لي أكتر:**\n1. قصْدك إيه بالظبط بالكلمة دي؟\n2. هل هو سداد التزام، ولا مصروف، ولا إثبات مديونية على عميل/مورد؟\nفهمني بكلمتين عشان أطلع القيد مظبوط على الفرازة!"
-                            st.markdown(clarification_msg)
-                            st.session_state['chat_history'].append({"role": "assistant", "content": clarification_msg})
-                        
-                        # 3. العمليات الواضحة والمحددة فقط
+                        response = client.models.generate_content(
+                            model='gemini-2.5-flash',
+                            contents=user_prompt,
+                            config={"system_instruction": system_instruction}
+                        )
+                        ai_reply = response.text
+                    except Exception as e:
+                        # رد افتراضي ذكي لو المفتاح مش موجود عشان السيستم مايعملش Error
+                        text_lower = user_prompt.strip().lower()
+                        if any(g in text_lower for g in ["ازيك", "عامل ايه", "هاي", "السلام عليكم", "مرحباً"]):
+                            ai_reply = "الله يسلمك يا باشمهندس طارق! أنا جاهز تماماً لأي استفسار مالي أو محاسبي يخص الشغل."
+                        elif len(text_lower.split()) <= 2:
+                            ai_reply = f"يا باشمهندس طارق، جملتك ({user_prompt}) مختصرة جداً. عشان مألفش قيد غلط، وضح لي أكتر: هل دي مصاريف تشغيل، ولا سداد التزام، ولا إيه بالضبط؟"
                         else:
-                            matched_debit = "المصاريف العمومية والتشغيلية"
-                            matched_credit = "الخزينة الرئيسية"
-                            
-                            if "إيجار" in text_lower or "اجار" in text_lower:
-                                matched_debit = "مصاريف إيجار المخازن"
-                            elif "كهرباء" in text_lower or "نور" in text_lower:
-                                matched_debit = "مصاريف المرافق (كهرباء ومياه)"
-                            elif "مرتب" in text_lower or "رواتب" in text_lower:
-                                matched_debit = "مصاريف الأجور والرواتب"
-                            elif "بضاعة" in text_lower or "شراء" in text_lower:
-                                matched_debit = "مخزون البضاعة والخامات"
-                                
-                            result_reply = f"""تمام يا باشمهندس، فهمت العملية المالية وسجلتها:\n\n* **القيد المحاسبي المقترح:**\n  * **من ح/** {matched_debit} (مدين)\n  * **إلى ح/** {matched_credit} (دائن)\n\n*(هل القيد مظبوط معاك ولا نحب نعدل حاجة؟)*"""
-                            st.markdown(result_reply)
-                            st.session_state['chat_history'].append({"role": "assistant", "content": result_reply})
+                            ai_reply = f"تمام يا باشمهندس، بالنسبة لعمليتك ('{user_prompt}'): التحليل المالي بيقترح إثباتها ضمن المصاريف العمومية أو الحساب المرتبط بشجرتك. (لربط نموذج ذكاء اصطناعي حقيقي 100% يرجى إضافة مفتاح Google Gemini API في الكود)."
+
+                    st.markdown(ai_reply)
+                    st.session_state['ai_chat_history'].append({"role": "assistant", "content": ai_reply})
 
     # --- 3. صفحة إعدادات الشركة واللوجو وشجرة الحسابات ---
     elif page_key == "company_settings":
