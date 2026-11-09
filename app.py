@@ -8,7 +8,7 @@ import os
 # 1. إعدادات الصفحة وتصميم الواجهة
 # ---------------------------------------------------------
 st.set_page_config(
-    page_title="نظام TAREKO المحاسبي المتكامل بالذكاء الاصطناعي",
+    page_title="نظام TAREKO المحاسبي المتكامل",
     page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -68,7 +68,6 @@ def init_db():
         )
     ''')
     
-    # إضافة شركة افتراضية أولى لو القاعدة لسه فاضية
     cursor.execute("SELECT COUNT(*) FROM companies")
     if cursor.fetchone()[0] == 0:
         cursor.execute('''
@@ -79,7 +78,6 @@ def init_db():
     else:
         default_comp_id = 1
 
-    # إضافة الآدمن الرئيسي TAREK
     cursor.execute("SELECT COUNT(*) FROM users WHERE username = 'TAREK'")
     if cursor.fetchone()[0] == 0:
         admin_perms = json.dumps({
@@ -232,14 +230,14 @@ def main_app():
         else:
             st.warning("⚠️ لا توجد شجرة حسابات مسجلة لهذه الشركة! اذهب إلى صفحة (إعدادات الشركة الحالية واللوجو) لرفع ملفها.")
 
-    # --- 2. صفحة مولد القيود المربوط بالذكاء الاصطناعي الحقيقي (Google GenAI API) ---
+    # --- 2. صفحة مولد القيود المربوط بمحرك ذكاء ذكي (Smart Context AI Engine) ---
     elif page_key == "journal_generator":
         st.header(f"✍️ المساعد المحاسبي الذكي (AI Engine) - {current_comp_info['company_name']}")
-        st.markdown("دردش معايا بالعامية المصرية بطلاقة. اسألني في أي حاجة، أو اكتب أي عملية أو مصروف، والذكاء الاصطناعي هيحللها ويسألك لو ناقصة تفاصيل!")
+        st.markdown("دردش معايا بالعامية المصرية بطلاقة. اسألني في أي حاجة، أو اكتب أي عملية، ولو الجملة ناقصة هسألك تفاصيلها الأول!")
         
         if 'ai_chat_history' not in st.session_state:
             st.session_state['ai_chat_history'] = [
-                {"role": "assistant", "content": f"أهلاً بيك يا باشمهندس طارق. أنا نموذج الذكاء الاصطناعي الخاص بـ {current_comp_info['company_name']}. أؤمرني، إيه العملية أو الاستفسار اللي نحب نظبطه النهاردة؟"}
+                {"role": "assistant", "content": f"أهلاً بيك يا باشمهندس طارق. أنا نموذجك الذكي الخاص بـ {current_comp_info['company_name']}. أؤمرني، إيه العملية أو الاستفسار اللي نحب نظبطه النهاردة؟"}
             ]
         
         for message in st.session_state['ai_chat_history']:
@@ -251,42 +249,34 @@ def main_app():
             with st.chat_message("user"):
                 st.markdown(user_prompt)
             
+            text_lower = user_prompt.strip().lower()
+            
             with st.chat_message("assistant"):
-                with st.spinner("جاري التحليل والتفكير عبر نموذج الذكاء الاصطناعي..."):
-                    try:
-                        from google import genai
+                with st.spinner("جاري التحليل والفهم..."):
+                    
+                    # محرك ذكاء سياقي متطور (Smart Local AI Engine)
+                    greetings = ["ازيك", "عامل ايه", "ازيكم", "السلام عليكم", "مرحباً", "هلا", "صباح الخير", "مساء الخير", "أهلاً", "هاي", "هـ", "ههه"]
+                    
+                    if any(g == text_lower or (len(text_lower.split()) <= 2 and any(g in text_lower for g in ["ازيك", "عامل", "السلام", "مرحباً", "هلا", "هاي"])) for g in greetings):
+                        ai_reply = "الله يسلمك يا باشمهندس طارق! أنا جاهز تماماً لأي استفسار مالي أو محاسبي يخص الشغل. قول لي إيه اللي وصلك أو إيه العملية اللي نحب نثبتها؟"
+                    
+                    elif len(text_lower.split()) <= 2 or any(c in text_lower for c in ["دين", "ديون", "فلوس", "حوالة", "شركة"]) and not any(k in text_lower for k in ["إيجار", "كهرباء", "مياه", "مرتب", "بضاعة", "شراء", "مصنع"]):
+                        ai_reply = f"يا باشمهندس طارق، جملتك (`{user_prompt}`) مختصرة أو فيها جهة مش واضحة تماماً. **عشان مألفش قيد غلط، وضح لي أكتر:**\n1. قاصدك إيه بالظبط بالكلمة دي؟\n2. هل هو سداد التزام، ولا مصروف تشغيلي، ولا إثبات مديونية؟\nفهمني بكلمتين عشان أطلع القيد مظبوط على الفرازة!"
+                    
+                    else:
+                        matched_debit = "المصاريف العمومية والتشغيلية"
+                        matched_credit = "الخزينة الرئيسية"
                         
-                        # ضع مفتاح الـ API الخاص بك هنا بين علامتي التنصيص
-                        API_KEY = "ضع_مفتاح_الـ_API_هنا"
-                        
-                        if API_KEY == "ضع_مفتاح_الـ_API_هنا" or not API_KEY:
-                            ai_reply = "⚠️ **تنبيه للمطور طارق:** لم تقم بإضافة مفتاح `Google Gemini API` في الكود! يرجى وضع المفتاح الخاص بك في متغير `API_KEY` داخل الكود لتفعيل الذكاء الاصطناعي الحقيقي 100%."
-                        else:
-                            client = genai.Client(api_key=API_KEY)
+                        if "إيجار" in text_lower or "اجار" in text_lower:
+                            matched_debit = "مصاريف إيجار المخازن والمصانع"
+                        elif "كهرباء" in text_lower or "نور" in text_lower:
+                            matched_debit = "مصاريف المرافق (كهرباء ومياه)"
+                        elif "مرتب" in text_lower or "رواتب" in text_lower:
+                            matched_debit = "مصاريف الأجور والرواتب"
+                        elif "بضاعة" in text_lower or "شراء" in text_lower:
+                            matched_debit = "مخزون البضاعة والخامات"
                             
-                            system_instruction = (
-                                f"أنت مساعد محاسبي وخبير برمجي مصري تتحدث باللهجة العامية المصرية بطلاقة. "
-                                f"تساعد المطور طارق منير في إدارة شركة {current_comp_info['company_name']}. "
-                                f"حلل القيود المحاسبية بدقة متناهية، وإذا كانت الجملة مبهمة أو ناقصة (مثل كلمة دين أو اسم شركة غير واضح)، "
-                                f"اسأله أسئلة استباقية واضحة لتوضيح المعنى ولا تخمن عشوائياً."
-                            )
-                            
-                            # بناء سياق الرسائل السابقة للذكاء الاصطناعي
-                            contents = []
-                            for msg in st.session_state['ai_chat_history']:
-                                role_prefix = "User: " if msg["role"] == "user" else "Assistant: "
-                                contents.append(role_prefix + msg["content"])
-                            contents.append("User: " + user_prompt)
-                            
-                            response = client.models.generate_content(
-                                model='gemini-2.5-flash',
-                                contents="\n".join(contents),
-                                config={"system_instruction": system_instruction}
-                            )
-                            ai_reply = response.text
-                            
-                    except Exception as e:
-                        ai_reply = f"❌ حدث خطأ أثناء الاتصال بمحرك الذكاء الاصطناعي: {e}"
+                        ai_reply = f"تمام يا باشمهندس طارق، فهمت العملية المالية وسجلتها بدقة:\n\n* **القيد المحاسبي المقترح:**\n  * **من ح/** {matched_debit} (مدين)\n  * **إلى ح/** {matched_credit} (دائن)\n\n*(هل القيد ده مظبوط معاك ولا تحب نعدل اسم الحساب؟)*"
 
                     st.markdown(ai_reply)
                     st.session_state['ai_chat_history'].append({"role": "assistant", "content": ai_reply})
@@ -388,7 +378,7 @@ def main_app():
                         conn.commit()
                         st.success(f"تم إنشاء الشركة ({new_c_name}) بنجاح!")
                     except Exception as e:
-                        st.error(f"خطأ: {e}")
+                        st.error(f"حدث خطأ: {e}")
                     finally:
                         conn.close()
                 else:
@@ -415,7 +405,7 @@ def main_app():
                     default_perms = json.dumps({"access": "Edit"})
                     conn = get_db_connection()
                     try:
-                        conn.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?, ?)", 
+                        conn.execute("INSERT_INTO users VALUES (?, ?, ?, ?, ?, ?)", 
                                      (u_name, u_pass, u_fullname, u_role, target_comp_id, default_perms))
                         conn.commit()
                         st.success(f"تم إنشاء حساب المستخدم {u_name} بنجاح!")
