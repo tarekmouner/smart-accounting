@@ -194,7 +194,7 @@ def main_app():
     
     available_pages = {}
     available_pages["📂 شجرة حسابات الشركة"] = "chart_of_accounts"
-    available_pages["✍️ مولد القيود الذكي"] = "journal_generator"
+    available_pages["✍️ مولد القيود الذكي (شات)"] = "journal_generator"
     available_pages["🏢 إعدادات الشركة الحالية واللوجو"] = "company_settings"
     
     if user_perms.get("companies_manager", {}).get("access") or user_info['role'] == 'Admin':
@@ -229,10 +229,10 @@ def main_app():
         else:
             st.warning("⚠️ لا توجد شجرة حسابات مسجلة لهذه الشركة حتى الآن! اذهب إلى صفحة (إعدادات الشركة الحالية واللوجو) لرفع ملف شجرة الحسابات الخاص بها.")
 
-    # --- 2. صفحة مولد القيود الذكي الحقيقي ---
+    # --- 2. صفحة مولد القيود التفاعلي (شات حقيقي) ---
     elif page_key == "journal_generator":
-        st.header(f"✍️ مولد القيود المحاسبية الذكي - {current_comp_info['company_name']}")
-        st.markdown("اكتب العملية بالعامية المصرية بوضوح (مثلاً: دفعنا 5000 إيجار، اشترينا بضاعة من المورد، سددنا فاتورة الكهرباء)، والسيستم هيحللها ويطابقها بشجرة حسابات الشركة الحالية:")
+        st.header(f"✍️ المساعد المحاسبي التفاعلي - {current_comp_info['company_name']}")
+        st.markdown("دردش معايا واكتب أي عملية بالعامية المصرية (مثلاً: دفعنا 5000 إيجار، أو حولنا فلوس لشركة بيلتون). **لو في حاجة مش واضحة، هسألك لحد ما أفهمها وأطلع القيد المضبوط!**")
         
         conn = get_db_connection()
         coa_df = pd.read_sql_query(
@@ -243,63 +243,47 @@ def main_app():
         conn.close()
         
         if coa_df.empty:
-            st.error("⚠️ تنبيه هام: لا توجد شجرة حسابات مسجلة لهذه الشركة! برجاء رفع شجرة الحسابات من صفحة (إعدادات الشركة الحالية واللوجو) أولاً حتى يستطيع السيستم تحليل القيود ومطابقتها.")
+            st.error("⚠️ تنبيه: لا توجد شجرة حسابات مسجلة لهذه الشركة! برجاء رفع شجرة الحسابات من إعدادات الشركة أولاً.")
         else:
-            user_input = st.text_area("اكتب العملية هنا:", placeholder="مثال: دفعنا 2000 جنيه فاتورة النور كاش أو اشترينا بضاعة على الحساب...")
+            if 'chat_history' not in st.session_state:
+                st.session_state['chat_history'] = [
+                    {"role": "assistant", "content": f"أهلاً بيك يا باشمهندس طارق. أنا معاك أهو، اكتب لي العملية أو المصروف اللي حصل في {current_comp_info['company_name']}، ولو احتاجت تفاصيل هسألك لحد ما نظبط القيد!"}
+                ]
             
-            if st.button("تحليل وتوليد القيد المحاسبي"):
-                if not user_input.strip():
-                    st.warning("يا غالي اكتب العملية المحاسبية الأول عشان أفهمها!")
-                else:
-                    text_lower = user_input.strip().lower()
-                    
-                    matched_debit = None
-                    matched_credit = "الخزينة الرئيسية"
-                    analysis_msg = ""
-                    
-                    if any(word in text_lower for word in ["إيجار", "اجار", "مخزن"]):
-                        matched_debit = "مصاريف إيجار"
-                        analysis_msg = "العملية عبارة عن مصروف إيجار يخص التشغيل (مصروف زاد فأصبح مدين)."
-                    elif any(word in text_lower for word in ["كهرباء", "نور", "مياه", "فاتورة"]):
-                        matched_debit = "مصاريف خدمات ومرافق (كهرباء ومياه)"
-                        analysis_msg = "العملية عبارة عن سداد مصروف خدمي للمرافق."
-                    elif any(word in text_lower for word in ["شراء", "اشترينا", "بضاعة", "خامات"]):
-                        matched_debit = "مخزون الخامات أو البضاعة"
-                        analysis_msg = "العملية عبارة عن شراء بضاعة أو خامات تزيد أصول المخزون."
-                    elif any(word in text_lower for word in ["مرتب", "مرتبات", "رواتب", "سلفية", "عامل"]):
-                        matched_debit = "مصاريف أجور ومرتبات"
-                        analysis_msg = "العملية تتعلق بمصاريف العاملين والأجور."
-                    else:
-                        matched_debit = "المصاريف العمومية والتشغيلية"
-                        analysis_msg = f"السيستم قرأ جملتك ('{user_input}') ولم يجد بنداً مخصصاً بدقة، فصنفها ضمن المصاريف العمومية."
-
-                    if any(word in text_lower for word in ["حساب", "آجل", "على الحساب", "مورد"]):
-                        matched_credit = "الموردين / الدائنين"
-                        credit_desc = "زيادة التزام على الشركة لصالح المورد (دائن)."
-                    elif any(word in text_lower for word in ["بنك", "تحويل", "فيزا", "إنستاباي"]):
-                        matched_credit = "البنك الأهلي / البنوك"
-                        credit_desc = "نقص رصيد الحساب البنكي (دائن)."
-                    else:
-                        matched_credit = "الخزينة الرئيسية"
-                        credit_desc = "نقص النقدية بالخزينة نتيجة السداد النقدي (دائن)."
-
-                    st.markdown("---")
-                    st.markdown("### 🔍 تحليل السيستم الذكي لعمليتك:")
-                    st.info(analysis_msg)
-                    
-                    st.markdown("#### 📋 القيد المحاسبي المقترح والمظبوط:")
-                    st.markdown(f"""
-                    * **من ح/ {matched_debit}** (مدين)
-                    * **إلى ح/ {matched_credit}** ({credit_desc})
-                    """)
-                    
-                    codes_in_coa = coa_df['account_name'].values
-                    found_debit = any(matched_debit.lower() in str(acc).lower() for acc in codes_in_coa)
-                    
-                    if found_debit or len(codes_in_coa) > 0:
-                        st.success("✅ **حالة المطابقة:** الحسابات متوافقة مع الهيكل المالي لشجرة حسابات الشركة المسجلة.")
-                    else:
-                        st.warning("⚠️ **ملحوظة تيمّة:** البند ده مش متشاف بصريح العبارة في شجرة الحسابات المرفوعة، هل نحب نضيفه كحساب مستقل المرة الجاية؟")
+            for message in st.session_state['chat_history']:
+                with st.chat_message(message["role"]):
+                    st.markdown(message["content"])
+            
+            if user_prompt := st.chat_input("اكتب العملية المحاسبية هنا..."):
+                st.session_state['chat_history'].append({"role": "user", "content": user_prompt})
+                with st.chat_message("user"):
+                    st.markdown(user_prompt)
+                
+                text_lower = user_prompt.strip().lower()
+                
+                with st.chat_message("assistant"):
+                    with st.spinner("جاري تحليل العملية..."):
+                        # فحص هل الجملة مبهمة وتحتاج سؤال استباقي (مثل أسماء شركات غامضة أو بنود غير شائعة)
+                        is_vague = not any(k in text_lower for k in ["إيجار", "اجار", "كهرباء", "نور", "مياه", "مرتب", "رواتب", "مرتبات", "شراء بضاعة", "صيانة"])
+                        
+                        if is_vague and any(c in text_lower for c in ["شركة", "إلى", "لـ", "حوالة", "دفعنا"]):
+                            clarification_msg = f"يا باشمهندس طارق، أنا قريت جملتك (`{user_prompt}`) ولقيت فيها جهة غير واضحة البند في شجرة الحسابات. **عشان مألفش من دماغي، فهمني أكتر:**\n1. هل الجهة دي (مورد بضاعة أو خامات) عليه مديونية؟\n2. ولا ده مصروف خدمي أو استشاري؟\n3. ولا سداد التزام سابق؟\nقولي طبيعتها إيه وأنا هثبتها فوراً!"
+                            st.markdown(clarification_msg)
+                            st.session_state['chat_history'].append({"role": "assistant", "content": clarification_msg})
+                        else:
+                            matched_debit = "المصاريف العمومية والتشغيلية"
+                            matched_credit = "الخزينة الرئيسية"
+                            
+                            if "إيجار" in text_lower or "اجار" in text_lower:
+                                matched_debit = "مصاريف إيجار المخازن"
+                            elif "كهرباء" in text_lower or "نور" in text_lower:
+                                matched_debit = "مصاريف المرافق (كهرباء ومياه)"
+                            elif "مرتب" in text_lower or "رواتب" in text_lower:
+                                matched_debit = "مصاريف الأجور والرواتب"
+                                
+                            result_reply = f"""تمام يا باشمهندس، فهمت العملية:\n\n* **القيد المحاسبي المقترح:**\n  * **من ح/** {matched_debit} (مدين)\n  * **إلى ح/** {matched_credit} (دائن)\n\n*(هل القيد ده مظبوط معاك ولا نحب نعدل حاجة؟)*"""
+                            st.markdown(result_reply)
+                            st.session_state['chat_history'].append({"role": "assistant", "content": result_reply})
 
     # --- 3. صفحة إعدادات الشركة الحالية ---
     elif page_key == "company_settings":
