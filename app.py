@@ -232,10 +232,10 @@ def main_app():
         else:
             st.warning("⚠️ لا توجد شجرة حسابات مسجلة لهذه الشركة! اذهب إلى صفحة (إعدادات الشركة الحالية واللوجو) لرفع ملفها.")
 
-    # --- 2. صفحة مولد القيود المربوط بالذكاء الاصطناعي الحقيقي (AI API) ---
+    # --- 2. صفحة مولد القيود المربوط بالذكاء الاصطناعي الحقيقي (Google GenAI API) ---
     elif page_key == "journal_generator":
         st.header(f"✍️ المساعد المحاسبي الذكي (AI Engine) - {current_comp_info['company_name']}")
-        st.markdown("اسألني عن أي حاجة، اكتب أي مصروف أو عملية مالية، وهرد عليك بالعامية المصرية وبدون أي تخمين أعمى!")
+        st.markdown("دردش معايا بالعامية المصرية بطلاقة. اسألني في أي حاجة، أو اكتب أي عملية أو مصروف، والذكاء الاصطناعي هيحللها ويسألك لو ناقصة تفاصيل!")
         
         if 'ai_chat_history' not in st.session_state:
             st.session_state['ai_chat_history'] = [
@@ -246,35 +246,47 @@ def main_app():
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
         
-        if user_prompt := st.chat_input("اكتب سؤالك أو عمليتك المحاسبية هنا..."):
+        if user_prompt := st.chat_input("اكتب رسالتك أو عمليتك المحاسبية هنا..."):
             st.session_state['ai_chat_history'].append({"role": "user", "content": user_prompt})
             with st.chat_message("user"):
                 st.markdown(user_prompt)
             
             with st.chat_message("assistant"):
-                with st.spinner("جاري التحليل والتفكير..."):
+                with st.spinner("جاري التحليل والتفكير عبر نموذج الذكاء الاصطناعي..."):
                     try:
                         from google import genai
-                        # ضع مفتاح الـ API هنا أو عبر Streamlit Secrets
-                        client = genai.Client(api_key="ضع_مفتاح_الـ_API_هنا")
                         
-                        system_instruction = f"أنت مساعد محاسبي وخبير برمجي مصري تتحدث باللهجة العامية المصرية بطلاقة. تساعد المطور طارق منير في إدارة شركة {current_comp_info['company_name']}. حلل القيود بدقة، وإذا كانت الجملة مبهمة اسأله للتوضيح ولا تخمن عشوائياً."
+                        # ضع مفتاح الـ API الخاص بك هنا بين علامتي التنصيص
+                        API_KEY = "ضع_مفتاح_الـ_API_هنا"
                         
-                        response = client.models.generate_content(
-                            model='gemini-2.5-flash',
-                            contents=user_prompt,
-                            config={"system_instruction": system_instruction}
-                        )
-                        ai_reply = response.text
-                    except Exception as e:
-                        # رد افتراضي ذكي لو المفتاح مش موجود عشان السيستم مايعملش Error
-                        text_lower = user_prompt.strip().lower()
-                        if any(g in text_lower for g in ["ازيك", "عامل ايه", "هاي", "السلام عليكم", "مرحباً"]):
-                            ai_reply = "الله يسلمك يا باشمهندس طارق! أنا جاهز تماماً لأي استفسار مالي أو محاسبي يخص الشغل."
-                        elif len(text_lower.split()) <= 2:
-                            ai_reply = f"يا باشمهندس طارق، جملتك ({user_prompt}) مختصرة جداً. عشان مألفش قيد غلط، وضح لي أكتر: هل دي مصاريف تشغيل، ولا سداد التزام، ولا إيه بالضبط؟"
+                        if API_KEY == "ضع_مفتاح_الـ_API_هنا" or not API_KEY:
+                            ai_reply = "⚠️ **تنبيه للمطور طارق:** لم تقم بإضافة مفتاح `Google Gemini API` في الكود! يرجى وضع المفتاح الخاص بك في متغير `API_KEY` داخل الكود لتفعيل الذكاء الاصطناعي الحقيقي 100%."
                         else:
-                            ai_reply = f"تمام يا باشمهندس، بالنسبة لعمليتك ('{user_prompt}'): التحليل المالي بيقترح إثباتها ضمن المصاريف العمومية أو الحساب المرتبط بشجرتك. (لربط نموذج ذكاء اصطناعي حقيقي 100% يرجى إضافة مفتاح Google Gemini API في الكود)."
+                            client = genai.Client(api_key=API_KEY)
+                            
+                            system_instruction = (
+                                f"أنت مساعد محاسبي وخبير برمجي مصري تتحدث باللهجة العامية المصرية بطلاقة. "
+                                f"تساعد المطور طارق منير في إدارة شركة {current_comp_info['company_name']}. "
+                                f"حلل القيود المحاسبية بدقة متناهية، وإذا كانت الجملة مبهمة أو ناقصة (مثل كلمة دين أو اسم شركة غير واضح)، "
+                                f"اسأله أسئلة استباقية واضحة لتوضيح المعنى ولا تخمن عشوائياً."
+                            )
+                            
+                            # بناء سياق الرسائل السابقة للذكاء الاصطناعي
+                            contents = []
+                            for msg in st.session_state['ai_chat_history']:
+                                role_prefix = "User: " if msg["role"] == "user" else "Assistant: "
+                                contents.append(role_prefix + msg["content"])
+                            contents.append("User: " + user_prompt)
+                            
+                            response = client.models.generate_content(
+                                model='gemini-2.5-flash',
+                                contents="\n".join(contents),
+                                config={"system_instruction": system_instruction}
+                            )
+                            ai_reply = response.text
+                            
+                    except Exception as e:
+                        ai_reply = f"❌ حدث خطأ أثناء الاتصال بمحرك الذكاء الاصطناعي: {e}"
 
                     st.markdown(ai_reply)
                     st.session_state['ai_chat_history'].append({"role": "assistant", "content": ai_reply})
