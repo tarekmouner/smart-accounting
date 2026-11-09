@@ -2,7 +2,7 @@ import os
 import sqlite3
 import hashlib
 import pandas as pd
-from datetime import datetime, date
+from datetime import datetime
 
 DB_PATH = "data/app.db"
 os.makedirs("data", exist_ok=True)
@@ -170,11 +170,11 @@ def init_db():
     )
     """)
 
-    # المستخدم الأساسي
     c.execute("SELECT COUNT(*) FROM users WHERE username = 'tarek'")
     if c.fetchone()[0] == 0:
         c.execute("""
-            INSERT INTO users (username, password_hash, full_name, role, company_id, is_active, created_at)
+            INSERT INTO users
+            (username, password_hash, full_name, role, company_id, is_active, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (
             "tarek",
@@ -193,7 +193,8 @@ def init_db():
 def add_company(name, tax_number="", address="", phone="", email="", currency="EGP"):
     conn = get_conn()
     conn.execute("""
-        INSERT INTO companies (name, tax_number, address, phone, email, currency, created_at)
+        INSERT INTO companies
+        (name, tax_number, address, phone, email, currency, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
     """, (name, tax_number, address, phone, email, currency, datetime.now().isoformat()))
     conn.commit()
@@ -208,11 +209,6 @@ def get_companies():
 
 
 def save_coa(company_id, df):
-    """
-    df لازم يكون فيه الأعمدة:
-    code, name
-    واختياري: type, parent_code, level, explanation
-    """
     required = {"code", "name"}
     df.columns = [str(c).strip().lower() for c in df.columns]
 
@@ -229,6 +225,11 @@ def save_coa(company_id, df):
         if not code or not name:
             continue
 
+        try:
+            level = int(row.get("level", 1) or 1)
+        except Exception:
+            level = 1
+
         conn.execute("""
             INSERT OR REPLACE INTO accounts
             (company_id, code, name, type, parent_code, level, explanation, created_at)
@@ -239,7 +240,7 @@ def save_coa(company_id, df):
             name,
             str(row.get("type", "") or ""),
             str(row.get("parent_code", "") or ""),
-            int(row.get("level", 1) or 1),
+            level,
             str(row.get("explanation", "") or ""),
             datetime.now().isoformat()
         ))
@@ -316,10 +317,12 @@ def get_journal_entries(company_id):
     """, (company_id,)).fetchall()
 
     result = []
+
     for e in entries:
         lines = conn.execute("""
             SELECT * FROM journal_lines WHERE entry_id = ?
         """, (e["id"],)).fetchall()
+
         result.append({
             "entry": dict(e),
             "lines": [dict(l) for l in lines]
@@ -342,6 +345,7 @@ def add_party(company_id, party_type, name, phone="", email="", tax_number="", a
 
 def get_parties(company_id, party_type=None):
     conn = get_conn()
+
     if party_type:
         rows = conn.execute("""
             SELECT * FROM parties
@@ -354,6 +358,7 @@ def get_parties(company_id, party_type=None):
             WHERE company_id = ?
             ORDER BY name
         """, (company_id,)).fetchall()
+
     conn.close()
     return [dict(r) for r in rows]
 
@@ -366,7 +371,10 @@ def add_invoice(company_id, invoice_type, party_id, invoice_number, invoice_date
         INSERT INTO invoices
         (company_id, invoice_type, party_id, invoice_number, invoice_date, due_date, amount, paid_amount, status, notes, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (company_id, invoice_type, party_id, invoice_number, invoice_date, due_date, amount, paid_amount, status, notes, datetime.now().isoformat()))
+    """, (
+        company_id, invoice_type, party_id, invoice_number, invoice_date,
+        due_date, amount, paid_amount, status, notes, datetime.now().isoformat()
+    ))
     conn.commit()
     conn.close()
 
@@ -390,7 +398,10 @@ def add_contract(company_id, party_id, title, contract_date, start_date, end_dat
         INSERT INTO contracts
         (company_id, party_id, title, contract_date, start_date, end_date, amount, payment_terms, notes, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (company_id, party_id, title, contract_date, start_date, end_date, amount, payment_terms, notes, datetime.now().isoformat()))
+    """, (
+        company_id, party_id, title, contract_date, start_date,
+        end_date, amount, payment_terms, notes, datetime.now().isoformat()
+    ))
     conn.commit()
     conn.close()
 
@@ -411,7 +422,8 @@ def get_contracts(company_id):
 def add_reminder(company_id, title, due_date, notes=""):
     conn = get_conn()
     conn.execute("""
-        INSERT INTO reminders (company_id, title, due_date, notes, status, created_at)
+        INSERT INTO reminders
+        (company_id, title, due_date, notes, status, created_at)
         VALUES (?, ?, ?, ?, 'مفتوح', ?)
     """, (company_id, title, due_date, notes, datetime.now().isoformat()))
     conn.commit()
@@ -432,7 +444,8 @@ def get_reminders(company_id):
 def save_chat(company_id, username, role, message):
     conn = get_conn()
     conn.execute("""
-        INSERT INTO chat_messages (company_id, username, role, message, created_at)
+        INSERT INTO chat_messages
+        (company_id, username, role, message, created_at)
         VALUES (?, ?, ?, ?, ?)
     """, (company_id, username, role, message, datetime.now().isoformat()))
     conn.commit()
