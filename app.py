@@ -4,7 +4,7 @@ import auth
 import coa
 import assistant
 import entities
-import settings_page
+from settings_page import settings_page
 
 st.set_page_config(
     page_title="نظام المحاسبة الذكي",
@@ -72,6 +72,7 @@ if menu == "الرئيسية":
     reminders = db.get_reminders(company["id"])
 
     c1, c2, c3, c4 = st.columns(4)
+
     c1.metric("عدد الحسابات", len(accounts))
     c2.metric("عدد القيود", len(entries))
     c3.metric("عدد الفواتير", len(invoices))
@@ -105,6 +106,7 @@ elif menu == "القيود المحاسبية":
 
         for i in range(2):
             st.write(f"**السطر {i + 1}**")
+
             account = st.selectbox(
                 f"الحساب {i + 1}",
                 accounts,
@@ -113,12 +115,23 @@ elif menu == "القيود المحاسبية":
             )
 
             debit = st.number_input(
-                f"مدين {i + 1}", min_value=0.0, step=100.0, key=f"debit_{i}"
+                f"مدين {i + 1}",
+                min_value=0.0,
+                step=100.0,
+                key=f"debit_{i}"
             )
+
             credit = st.number_input(
-                f"دائن {i + 1}", min_value=0.0, step=100.0, key=f"credit_{i}"
+                f"دائن {i + 1}",
+                min_value=0.0,
+                step=100.0,
+                key=f"credit_{i}"
             )
-            memo = st.text_input(f"بيان {i + 1}", key=f"memo_{i}")
+
+            memo = st.text_input(
+                f"بيان {i + 1}",
+                key=f"memo_{i}"
+            )
 
             lines.append({
                 "account_code": account["code"],
@@ -158,4 +171,4 @@ elif menu == "القيود المحاسبية":
                 )
 
 elif menu == "الإعدادات":
-    settings_page.settings_page(user)
+    settings_page(user)
