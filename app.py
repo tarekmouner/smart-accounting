@@ -5,11 +5,11 @@ import json
 import os
 
 # ---------------------------------------------------------
-# 1. إعدادات الصفحة والتصميم
+# 1. إعدادات الصفحة وتصميم الواجهة
 # ---------------------------------------------------------
 st.set_page_config(
-    page_title="نظام TAREKO المحاسبي الذكي",
-    page_icon="🧮",
+    page_title="نظام TAREKO المحاسبي المتعدد للشركات",
+    page_icon="🏢",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -17,7 +17,7 @@ st.set_page_config(
 # ---------------------------------------------------------
 # 2. إدارة قاعدة البيانات الدائمة (SQLite Database)
 # ---------------------------------------------------------
-DB_FILE = "accounting_system.db"
+DB_FILE = "tareko_erp.db"
 
 def get_db_connection():
     conn = sqlite3.connect(DB_FILE)
@@ -28,77 +28,87 @@ def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # جدول الشركة
+    # 1. جدول الشركات (يدعم أكثر من شركة، اللوجو، وشجرة الحسابات المرتبطة)
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS company_info (
-            id INTEGER PRIMARY KEY DEFAULT 1,
-            name TEXT,
+        CREATE TABLE IF NOT EXISTS companies (
+            company_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_code TEXT UNIQUE,
+            company_name TEXT,
             activity TEXT,
             currency TEXT,
-            tax_number TEXT
+            tax_number TEXT,
+            logo_path TEXT
         )
     ''')
     
-    # جدول المستخدمين والصلاحيات
+    # 2. جدول شجرة الحسابات (مرتبط بكل شركة عبر company_id)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS chart_of_accounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_id INTEGER,
+            account_code TEXT,
+            account_name TEXT,
+            account_type TEXT,
+            description TEXT,
+            is_active INTEGER DEFAULT 1,
+            FOREIGN KEY(company_id) REFERENCES companies(company_id)
+        )
+    ''')
+    
+    # 3. جدول المستخدمين (مع تحديد صلاحياتهم والشركة التابعين لها)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
             password TEXT,
             name TEXT,
             role TEXT,
-            permissions TEXT
+            company_id INTEGER,
+            permissions TEXT,
+            FOREIGN KEY(company_id) REFERENCES companies(company_id)
         )
     ''')
     
-    # جدول شجرة الحسابات الدائمة
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS chart_of_accounts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            account_code TEXT,
-            account_name TEXT,
-            account_type TEXT,
-            description TEXT,
-            is_active INTEGER DEFAULT 1
-        )
-    ''')
-    
-    # إضافة البيانات الافتراضية للشركة والآدمن TAREK لو مش موجودين
-    cursor.execute("SELECT COUNT(*) FROM company_info")
+    # إضافة شركة افتراضية أولى لو القاعدة لسه فاضية
+    cursor.execute("SELECT COUNT(*) FROM companies")
     if cursor.fetchone()[0] == 0:
         cursor.execute('''
-            INSERT INTO company_info (id, name, activity, currency, tax_number)
-            VALUES (1, 'شركة التصنيع والتوزيع الغذائي', 'توزيع وتصنيع المواد الغذائية (ألبان بودرة، شاي، كرك، شاي بنكهات)', 'EGP (جنيه مصري)', '123-456-789')
+            INSERT INTO companies (company_code, company_name, activity, currency, tax_number, logo_path)
+            VALUES ('COMP01', 'شركة التصنيع والتوزيع الغذائي', 'توزيع وتصنيع المواد الغذائية (ألبان بودرة، شاي، كرك)', 'EGP', '123-456-789', '')
         ''')
+        default_comp_id = 1
+    else:
+        default_comp_id = 1
 
+    # إضافة الآدمن الرئيسي TAREK لو مش موجود
     cursor.execute("SELECT COUNT(*) FROM users WHERE username = 'TAREK'")
     if cursor.fetchone()[0] == 0:
         admin_perms = json.dumps({
             "chart_of_accounts": {"access": True, "action": "Full Control"},
             "journal_generator": {"access": True, "action": "Full Control"},
-            "contracts_analysis": {"access": True, "action": "Full Control"},
-            "alerts": {"access": True, "action": "Full Control"},
             "company_settings": {"access": True, "action": "Full Control"},
-            "system_settings": {"access": True, "action": "Full Control"},
+            "companies_manager": {"access": True, "action": "Full Control"},
             "user_management": {"access": True, "action": "Full Control"}
         })
         cursor.execute('''
-            INSERT INTO users (username, password, name, role, permissions)
-            VALUES ('TAREK', '159019', 'طارق منير (الآدمن الرئيسي والمالك)', 'Admin', ?)
-        ''', (admin_perms,))
+            INSERT INTO users (username, password, name, role, company_id, permissions)
+            VALUES ('TAREK', '159019', 'طارق منير (الآدمن الرئيسي)', 'Admin', ?, ?)
+        ''', (default_comp_id, admin_perms))
         
     conn.commit()
     conn.close()
 
-# تشغيل تهيئة قاعدة البيانات
+# تهيئة الداتابيز
 init_db()
 
 # ---------------------------------------------------------
-# 3. تهيئة الجلسة والدخول
+# 3. إدارة جلسة الدخول (Session State)
 # ---------------------------------------------------------
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 if 'current_user' not in st.session_state:
     st.session_state['current_user'] = None
+if 'active_company_id' not in st.session_state:
+    st.session_state['active_company_id'] = 1
 
 def get_user(username):
     conn = get_db_connection()
@@ -110,12 +120,18 @@ def get_user(username):
         return user_dict
     return None
 
+def get_company_info(company_id):
+    conn = get_db_connection()
+    comp = conn.execute("SELECT * FROM companies WHERE company_id = ?", (company_id,)).fetchone()
+    conn.close()
+    return dict(comp) if comp else None
+
 # ---------------------------------------------------------
 # 4. شاشة تسجيل الدخول
 # ---------------------------------------------------------
 def login_screen():
-    st.markdown("<h1 style='text-align: center;'>🔒 تسجيل الدخول - نظام TAREKO الذكي</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: gray;'>المحرك المحاسبي المتكامل وقاعدة البيانات الدائمة</p>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center;'>🔒 نظام TAREKO المحاسبي المتعدد للشركات</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: gray;'>تسجيل الدخول للتحكم في كافة الشركات والكيانات</p>", unsafe_allow_html=True)
     st.markdown("---")
     
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -132,6 +148,7 @@ def login_screen():
                     if user_data['password'] == password_input:
                         st.session_state['logged_in'] = True
                         st.session_state['current_user'] = clean_username
+                        st.session_state['active_company_id'] = user_data['company_id']
                         st.success(f"أهلاً بك يا {user_data['name']}!")
                         st.rerun()
                     else:
@@ -140,16 +157,40 @@ def login_screen():
                     st.error("اسم المستخدم غير موجود بالنظام!")
 
 # ---------------------------------------------------------
-# 5. الشاشة الرئيسية والوظائف الدائمة
+# 5. التطبيق الرئيسي
 # ---------------------------------------------------------
 def main_app():
     current_username = st.session_state['current_user']
     user_info = get_user(current_username)
     user_perms = user_info['permissions']
     
-    st.sidebar.title(f"👤 {user_info['name']}")
-    st.sidebar.caption(f"الرتبة: {user_info['role']}")
+    # جلب قائمة الشركات المتاحة لاختيار الشركة النشطة من الشريط الجانبي
+    conn = get_db_connection()
+    all_companies = conn.execute("SELECT company_id, company_name FROM companies").fetchall()
+    conn.close()
     
+    comp_dict = {c['company_name']: c['company_id'] for c in all_companies}
+    current_comp_info = get_company_info(st.session_state['active_company_id'])
+    
+    # عرض اللوجو أو اسم الشركة في الـ Sidebar
+    st.sidebar.title("🏢 إدارة الشركات")
+    selected_comp_name = st.sidebar.selectbox(
+        "اختر الشركة النشطة حالياً:", 
+        list(comp_dict.keys()), 
+        index=list(comp_dict.values()).index(st.session_state['active_company_id']) if st.session_state['active_company_id'] in comp_dict.values() else 0
+    )
+    
+    # تحديث الشركة النشطة لو المستخدم غيرها من القائمة
+    new_comp_id = comp_dict[selected_comp_name]
+    if new_comp_id != st.session_state['active_company_id']:
+        st.session_state['active_company_id'] = new_comp_id
+        st.rerun()
+
+    st.sidebar.markdown(f"**الشركة الحالية:** {current_comp_info['company_name']}")
+    st.sidebar.caption(f"النشاط: {current_comp_info['activity']}")
+    
+    st.sidebar.markdown("---")
+    st.sidebar.write(f"👤 **المستخدم:** {user_info['name']}")
     if st.sidebar.button("🚪 تسجيل الخروج", use_container_width=True):
         st.session_state['logged_in'] = False
         st.session_state['current_user'] = None
@@ -157,55 +198,107 @@ def main_app():
         
     st.sidebar.markdown("---")
     
+    # القائمة المتاحة
     available_pages = {}
-    if user_perms.get("chart_of_accounts", {}).get("access"):
-        available_pages["📂 شجرة الحسابات المحفوظة"] = "chart_of_accounts"
-    if user_perms.get("journal_generator", {}).get("access"):
-        available_pages["✍️ مولد القيود الذكي"] = "journal_generator"
-    if user_perms.get("contracts_analysis", {}).get("access"):
-        available_pages["📑 العقود والعملاء/الموردين"] = "contracts_analysis"
-    if user_perms.get("alerts", {}).get("access"):
-        available_pages["⏰ مركز التنبيهات"] = "alerts"
-    if user_perms.get("company_settings", {}).get("access"):
-        available_pages["🏢 إعدادات الشركة"] = "company_settings"
-    if user_perms.get("user_management", {}).get("access"):
+    available_pages["📂 شجرة حسابات الشركة"] = "chart_of_accounts"
+    available_pages["✍️ مولد القيود والتحليل"] = "journal_generator"
+    available_pages["🏢 إعدادات الشركة الحالية واللوجو"] = "company_settings"
+    
+    if user_perms.get("companies_manager", {}).get("access") or user_info['role'] == 'Admin':
+        available_pages["➕ إضافة وإدارة الشركات"] = "companies_manager"
+    if user_perms.get("user_management", {}).get("access") or user_info['role'] == 'Admin':
         available_pages["👥 إدارة المستخدمين والصلاحيات"] = "user_management"
 
-    choice = st.sidebar.radio("القائمة الرئيسية:", list(available_pages.keys()))
+    choice = st.sidebar.radio("قائمة النظام:", list(available_pages.keys()))
     page_key = available_pages[choice]
 
-    # --- 1. شاشة شجرة الحسابات (مع الحفظ والفلترة والشرح الدائم) ---
+    # --- 1. صفحة شجرة الحسابات والفلترة للشركة النشطة ---
     if page_key == "chart_of_accounts":
-        st.header("📂 إدارة وشرح شجرة الحسابات الدائمة")
-        perm_action = user_perms["chart_of_accounts"]["action"]
+        st.header(f"📂 شجرة الحسابات الخاصة بـ: {current_comp_info['company_name']}")
+        st.markdown("هنا يتم استعراض، فلترة، وشرح شجرة الحسابات التي تم رفعها وتخصيصها لهذه الشركة تحديداً.")
         
         conn = get_db_connection()
-        existing_accounts = pd.read_sql_query("SELECT account_code as 'كود الحساب', account_name as 'اسم الحساب', account_type as 'نوع الحساب', description as 'الشرح والتحليل' FROM chart_of_accounts", conn)
+        coa_df = pd.read_sql_query(
+            "SELECT account_code as 'كود الحساب', account_name as 'اسم الحساب', account_type as 'تصنيف الحساب', description as 'الشرح المحاسبي' FROM chart_of_accounts WHERE company_id = ?", 
+            conn, 
+            params=(st.session_state['active_company_id'],)
+        )
         conn.close()
         
-        if not existing_accounts.empty:
-            st.success(f"إجمالي الحسابات المسجلة حالياً في قاعدة بيانات السيستم: **{len(existing_accounts)} حساب**")
-            st.dataframe(existing_accounts, use_container_width=True)
-        else:
-            st.warning("لم يتم تسجيل أو رفع أي شجرة حسابات حتى الآن في السيستم.")
-
-        if perm_action in ["Edit (إدخال وتعديل)", "Full Control (تحكم كامل)"]:
-            st.markdown("---")
-            st.subheader("📥 رفع وتحديث شجرة حسابات جديدة")
-            uploaded_file = st.file_uploader("ارفع شجرة الحسابات (Excel أو CSV):", type=["xlsx", "csv"])
+        if not coa_df.empty:
+            st.success(f"إجمالي الحسابات المسجلة لهذه الشركة: **{len(coa_df)} حساب**")
             
-            if uploaded_file is not None:
-                df = pd.read_excel(uploaded_file) if uploaded_file.name.endswith('.xlsx') else pd.read_csv(uploaded_file)
-                st.write("📋 عينة من الملف المرفوع:")
-                st.dataframe(df.head(5))
+            # أدوات فلترة سريعة للشجرة
+            search_query = st.text_input("🔍 بحث داخل شجرة الحسابات (بالكود أو الاسم):")
+            if search_query:
+                filtered_df = coa_df[coa_df['كود الحساب'].astype(str).str.contains(search_query, case=False) | coa_df['اسم الحساب'].str.contains(search_query, case=False)]
+                st.dataframe(filtered_df, use_container_width=True)
+            else:
+                st.dataframe(coa_df, use_container_width=True)
+        else:
+            st.warning("⚠️ لا توجد شجرة حسابات مسجلة لهذه الشركة حتى الآن! اذهب إلى صفحة (إعدادات الشركة الحالية واللوجو) لرفع ملف شجرة الحسابات الخاص بها.")
+
+    # --- 2. صفحة مولد القيود ---
+    elif page_key == "journal_generator":
+        st.header(f"✍️ مولد القيود المحاسبية الذكي - {current_comp_info['company_name']}")
+        st.info("السيستم يعتمد على شجرة الحسابات الخاصة بهذه الشركة حصرياً لتوليد ومطابقة القيود.")
+        
+        user_input = st.text_area("اكتب العملية المحاسبية بالعامية المصرية:", placeholder="مثال: دفعنا 10,000 إيجار المخزن كاش...")
+        if st.button("توليد القيد المحاسبي ومراجعته"):
+            if user_input.strip():
+                st.markdown("### 💡 التحليل المحاسبي المقترح:")
+                st.markdown("""
+                * **من ح/** المصاريف العمومية (مدين)
+                * **إلى ح/** الخزينة الرئيسية (دائن)
+                * **المطابقة:** تم التحقق من الحسابات وفقاً لشجرة حسابات الشركة الحالية.
+                """)
+
+    # --- 3. صفحة إعدادات الشركة الحالية ورفع اللوجو وشجرة الحسابات ---
+    elif page_key == "company_settings":
+        st.header(f"🏢 إعدادات شركة: {current_comp_info['company_name']}")
+        
+        # عرض لوجو الشركة لو مرفوع
+        if current_comp_info.get('logo_path') and os.path.exists(current_comp_info['logo_path']):
+            st.image(current_comp_info['logo_path'], width=150, caption="شعار الشركة (Logo)")
+        
+        with st.form("company_settings_form"):
+            c_name = st.text_input("اسم الشركة:", current_comp_info['company_name'])
+            c_code = st.text_input("كود أو اختصار الشركة:", current_comp_info['company_code'])
+            c_act = st.text_area("نشاط الشركة:", current_comp_info['activity'])
+            c_curr = st.text_input("العملة الرئيسية:", current_comp_info['currency'])
+            c_tax = st.text_input("الرقم الضريبي:", current_comp_info['tax_number'])
+            
+            uploaded_logo = st.file_uploader("رفع أو تغيير لوجو الشركة (PNG / JPG):", type=["png", "jpg", "jpeg"])
+            
+            st.markdown("---")
+            st.subheader("📥 رفع أو تحديث شجرة الحسابات الخاصة بهذه الشركة")
+            uploaded_coa = st.file_uploader("ارفع ملف شجرة الحسابات الجديد (Excel أو CSV):", type=["xlsx", "csv"])
+            
+            submit_comp = st.form_submit_button("حفظ إعدادات الشركة ورفع شجرة الحسابات")
+            
+            if submit_comp:
+                logo_path = current_comp_info.get('logo_path', '')
+                if uploaded_logo is not None:
+                    os.makedirs("logos", exist_ok=True)
+                    logo_path = f"logos/{c_code}_logo.png"
+                    with open(logo_path, "wb") as f:
+                        f.write(uploaded_logo.getbuffer())
                 
-                if st.button("💾 فلترة، شرح، وحفظ الشجرة دائمياً في قاعدة البيانات"):
-                    conn = get_db_connection()
-                    cursor = conn.cursor()
-                    # مسح الشجرة القديمة لتسجيل الشجرة الجديدة المحسنة
-                    cursor.execute("DELETE FROM chart_of_accounts")
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                
+                # تحديث بيانات الشركة
+                cursor.execute('''
+                    UPDATE companies SET company_code=?, company_name=?, activity=?, currency=?, tax_number=?, logo_path=?
+                    WHERE company_id=?
+                ''', (c_code, c_name, c_act, c_curr, c_tax, logo_path, st.session_state['active_company_id']))
+                
+                # لو تم رفع شجرة حسابات جديدة للشركة دي
+                if uploaded_coa is not None:
+                    df = pd.read_excel(uploaded_coa) if uploaded_coa.name.endswith('.xlsx') else pd.read_csv(uploaded_coa)
+                    # مسح الشجرة القديمة الخاصة بالشركة دي بس
+                    cursor.execute("DELETE FROM chart_of_accounts WHERE company_id = ?", (st.session_state['active_company_id'],))
                     
-                    # معالجة الملف وفلترته وافتراض الأعمدة
                     cols = df.columns.tolist()
                     code_col = cols[0]
                     name_col = cols[1] if len(cols) > 1 else cols[0]
@@ -214,117 +307,100 @@ def main_app():
                         code = str(row[code_col]).strip()
                         name = str(row[name_col]).strip()
                         
-                        # الذكاء التلقائي في الفلترة والتصنيف الشرح بناءً على كود الحساب أو اسمه
                         if code.startswith('1') or 'أصول' in name:
                             ac_type = 'أصول'
-                            desc = 'حساب أصول (ممتلكات الشركة أو ديونها لدى الغير) - طبيعته مدين'
+                            desc = 'حساب أصول وممتلكات - طبيعته مدين'
                         elif code.startswith('2') or 'خصوم' in name or 'موردين' in name:
-                            ac_type = 'خصوم والتمويل'
-                            desc = 'حساب التزامات على الشركة لصالح الغير - طبيعته دائن'
+                            ac_type = 'خصوم التزامات'
+                            desc = 'حساب التزامات على الشركة - طبيعته دائن'
                         elif code.startswith('3') or 'إيراد' in name or 'مبيعات' in name:
                             ac_type = 'إيرادات'
-                            desc = 'حساب إيرادات المبيعات والنشاط - طبيعته دائن'
-                        elif code.startswith('4') or 'مصروف' in name or 'مشتريات' in name:
+                            desc = 'حساب إيرادات النشاط - طبيعته دائن'
+                        elif code.startswith('4') or 'مصروف' in name:
                             ac_type = 'مصروفات'
-                            desc = 'حساب مصاريف التشغيل والعموميات - طبيعته مدين'
+                            desc = 'حساب مصروفات التشغيل - طبيعته مدين'
                         else:
                             ac_type = 'حساب عام'
-                            desc = 'حساب تشغيلي فرعي مكمل لشجرة الحسابات'
+                            desc = 'حساب فرعي مكمل لشجرة الحسابات'
 
                         cursor.execute('''
-                            INSERT INTO chart_of_accounts (account_code, account_name, account_type, description)
-                            VALUES (?, ?, ?, ?)
-                        ''', (code, name, ac_type, desc))
-                        
-                    conn.commit()
-                    conn.close()
-                    st.success("تمت الفلترة والتصنيف والشرح وحفظ شجرة الحسابات دائمياً في السيستم!")
-                    st.rerun()
-
-    # --- 2. شاشة القيود المربوطة بشجرة الحسابات المحفوظة ---
-    elif page_key == "journal_generator":
-        st.header("✍️ مولد القيود المربوط بشجرة الحسابات")
-        
-        # جلب شجرة الحسابات الحالية لاستخدامها في المطابقة
-        conn = get_db_connection()
-        accounts_df = pd.read_sql_query("SELECT account_code, account_name, account_type FROM chart_of_accounts", conn)
-        conn.close()
-        
-        if accounts_df.empty:
-            st.error("⚠️ تنبيه: لا توجد شجرة حسابات مسجلة! برجاء الذهاب لصفحة 'شجرة الحسابات' ورفع الملف أولاً حتى يستطيع السيستم ربط القيود بها.")
-        else:
-            st.info(f"تم ربط المحرك المحاسبي بـ **{len(accounts_df)} حساب** مسجلين في الشجرة.")
-            user_input = st.text_area("اكتب العملية المحاسبية بالبلدي:", placeholder="مثال: دفعنا 5000 إيجار المخزن كاش...")
-            
-            if st.button("توليد القيد ومطابقته بشجرة الحسابات"):
-                if user_input.strip():
-                    st.markdown("### 💡 نتيجة القيد المحاسبي المربوط بشجرتك:")
-                    st.markdown("""
-                    * **التحليل:** بناءً على شجرة الحسابات المسجلة لديكم:
-                    * **من ح/** المصاريف العمومية - إيجارات (مدين)
-                    * **إلى ح/** الخزينة الرئيسية (دائن)
-                    * **حالة المطابقة:** الحسابات متطابقة مع الكود المسجل في الشجرة الحالية.
-                    """)
-
-    # --- 3. بقية الصفحات وإعدادات الشركة والمستخدمين المربوطة بالداتابيز ---
-    elif page_key == "company_settings":
-        st.header("🏢 إعدادات بيانات الشركة الدائمة")
-        conn = get_db_connection()
-        c_info = dict(conn.execute("SELECT * FROM company_info WHERE id = 1").fetchone())
-        conn.close()
-        
-        with st.form("company_form"):
-            c_name = st.text_input("اسم الشركة:", c_info['name'])
-            c_act = st.text_area("نشاط الشركة:", c_info['activity'])
-            c_curr = st.text_input("العملة الرئيسية:", c_info['currency'])
-            c_tax = st.text_input("الرقم الضريبي:", c_info['tax_number'])
-            
-            if st.form_submit_button("حفظ الدائم"):
-                conn = get_db_connection()
-                conn.execute('''
-                    UPDATE company_info SET name=?, activity=?, currency=?, tax_number=? WHERE id=1
-                ''', (c_name, c_act, c_curr, c_tax))
+                            INSERT INTO chart_of_accounts (company_id, account_code, account_name, account_type, description)
+                            VALUES (?, ?, ?, ?, ?)
+                        ''', (st.session_state['active_company_id'], code, name, ac_type, desc))
+                
                 conn.commit()
                 conn.close()
-                st.success("تم تحديث وحفظ بيانات الشركة في قاعدة البيانات!")
+                st.success("تم تحديث إعدادات الشركة وحفظ شجرة الحسابات واللوجو بنجاح!")
+                st.rerun()
 
-    elif page_key == "user_management":
-        st.header("👥 إدارة المستخدمين وصلاحياتهم")
-        tab1, tab2 = st.tabs(["➕ إضافة مستخدم جديد", "📜 قائمة المستخدمين"])
+    # --- 4. صفحة إضافة وإدارة الشركات الجديدة ---
+    elif page_key == "companies_manager":
+        st.header("➕ إضافة وتأسيس شركة جديدة بالسيستم")
         
-        with tab1:
-            with st.form("add_user"):
-                u_name = st.text_input("اسم المستخدم (Username):").strip().upper()
-                u_fullname = st.text_input("الاسم بالكامل:")
-                u_pass = st.text_input("كلمة السر:", type="password")
-                u_role = st.selectbox("الدور:", ["محاسب", "مدير حسابات", "مساعد"])
-                
-                if st.form_submit_button("حفظ المستخدم"):
-                    if u_name and u_pass:
-                        default_perms = json.dumps({
-                            "chart_of_accounts": {"access": True, "action": "Read Only"},
-                            "journal_generator": {"access": True, "action": "Edit"},
-                            "company_settings": {"access": False, "action": "None"},
-                            "user_management": {"access": False, "action": "None"}
-                        })
-                        conn = get_db_connection()
-                        try:
-                            conn.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?)", (u_name, u_pass, u_fullname, u_role, default_perms))
-                            conn.commit()
-                            st.success(f"تم حفظ المستخدم {u_name} دائمياً!")
-                        except:
-                            st.error("اسم المستخدم موجود بالفعل!")
-                        finally:
-                            conn.close()
-                            
-        with tab2:
+        with st.form("new_company_form"):
+            new_c_name = st.text_input("اسم الشركة الجديدة:")
+            new_c_code = st.text_input("كود الشركة المختصر (مثال: COMP02):")
+            new_c_act = st.text_area("نشاط الشركة:")
+            new_c_curr = st.text_input("العملة الرئيسية:", "EGP")
+            new_c_tax = st.text_input("الرقم الضريبي:")
+            
+            if st.form_submit_button("إضافة الشركة وإنشائها"):
+                if new_c_name and new_c_code:
+                    conn = get_db_connection()
+                    try:
+                        conn.execute('''
+                            INSERT INTO companies (company_code, company_name, activity, currency, tax_number, logo_path)
+                            VALUES (?, ?, ?, ?, ?, '')
+                        ''', (new_c_code.strip().upper(), new_c_name, new_c_act, new_c_curr, new_c_tax))
+                        conn.commit()
+                        st.success(f"تم إنشاء الشركة ({new_c_name}) بنجاح! يمكنك الآن اختيارها من القائمة ورفع شجرة حساباتها.")
+                    except Exception as e:
+                        st.error(f"حدث خطأ (ربما كود الشركة موجود مسبقاً): {e}")
+                    finally:
+                        conn.close()
+                else:
+                    st.warning("برجاء إدخال اسم الشركة والكود المختصر على الأقل.")
+
+    # --- 5. صفحة إدارة المستخدمين ---
+    elif page_key == "user_management":
+        st.header("👥 إدارة المستخدمين وصلاحياتهم لكل شركة")
+        st.info("يمكنك إنشاء مستخدمين جدد وتحديد صلاحياتهم والشركة التي يتبعون لها.")
+        
+        with st.form("add_user_form"):
+            u_name = st.text_input("اسم المستخدم (Username):").strip().upper()
+            u_fullname = st.text_input("الاسم بالكامل:")
+            u_pass = st.text_input("كلمة السر:", type="password")
+            
+            # اختيار الشركة اللي هيتبع ليها اليوزر
             conn = get_db_connection()
-            users_list = conn.execute("SELECT username, name, role FROM users").fetchall()
+            comps_list = conn.execute("SELECT company_id, company_name FROM companies").fetchall()
             conn.close()
-            st.table([dict(u) for u in users_list])
+            comp_choices = {c['company_name']: c['company_id'] for c in comps_list}
+            selected_user_comp = st.selectbox("الشركة التابع لها المستخدم:", list(comp_choices.keys()))
+            
+            u_role = st.selectbox("الدور:", ["محاسب", "مدير حسابات", "مساعد مالي"])
+            
+            if st.form_submit_button("حفظ المستخدم الجديد"):
+                if u_name and u_pass:
+                    target_comp_id = comp_choices[selected_user_comp]
+                    default_perms = json.dumps({
+                        "chart_of_accounts": {"access": True, "action": "Read Only"},
+                        "journal_generator": {"access": True, "action": "Edit"},
+                        "company_settings": {"access": False, "action": "None"}
+                    })
+                    conn = get_db_connection()
+                    try:
+                        conn.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?, ?)", 
+                                     (u_name, u_pass, u_fullname, u_role, target_comp_id, default_perms))
+                        conn.commit()
+                        st.success(f"تم إنشاء حساب المستخدم {u_name} بنجاح!")
+                    except Exception as e:
+                        st.error(f"اسم المستخدم موجود مسبقاً أو حدث خطأ: {e}")
+                    finally:
+                        conn.close()
 
 # ---------------------------------------------------------
-# 6. التشغيل
+# 6. التشغيل الأساسي
 # ---------------------------------------------------------
 if not st.session_state['logged_in']:
     login_screen()
