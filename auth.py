@@ -14,7 +14,7 @@ PERMISSIONS = [
     "إدارة التنبيهات",
     "استخدام المساعد الذكي",
     "إدارة المستخدمين والصلاحيات",
-    "إعدادات النظام",
+    "إعدادات النظام"
 ]
 
 
@@ -55,9 +55,11 @@ def has_permission(user, permission):
 
 def create_user(username, password, full_name, role, company_id=None):
     conn = db.get_conn()
+
     try:
         conn.execute("""
-            INSERT INTO users (username, password_hash, full_name, role, company_id, is_active, created_at)
+            INSERT INTO users
+            (username, password_hash, full_name, role, company_id, is_active, created_at)
             VALUES (?, ?, ?, ?, ?, 1, ?)
         """, (
             username,
@@ -67,10 +69,13 @@ def create_user(username, password, full_name, role, company_id=None):
             company_id,
             datetime.now().isoformat()
         ))
+
         conn.commit()
         return True, "تم إنشاء المستخدم بنجاح"
+
     except Exception as e:
         return False, str(e)
+
     finally:
         conn.close()
 
@@ -81,7 +86,8 @@ def save_permissions(user_id, selected_permissions):
 
     for perm in selected_permissions:
         conn.execute("""
-            INSERT INTO permissions (user_id, permission, allowed)
+            INSERT INTO permissions
+            (user_id, permission, allowed)
             VALUES (?, ?, 1)
         """, (user_id, perm))
 
