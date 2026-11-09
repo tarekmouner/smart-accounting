@@ -1,0 +1,17 @@
+smart_accounting/
+│
+├── app.py
+├── db.py
+├── auth.py
+├── coa.py
+├── assistant.py
+├── entities.py
+├── reminders.py
+├── settings_page.py
+│
+├── requirements.txt
+├── .gitignore
+├── README.md
+│
+└── .streamlit/
+    └── secrets.toml.example
